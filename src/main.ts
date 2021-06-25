@@ -1,5 +1,8 @@
 import "./assets/style/style.css";
 
+import QRious from "qrious";
+import jsQR from "jsqr";
+
 /*========================*/
 /*===== DOM Elements =====*/
 /*========================*/
@@ -18,7 +21,8 @@ const drawerScannerCanvas = document.querySelector<HTMLCanvasElement>(
 const drawerRoleSelector = document.querySelector<HTMLSelectElement>(
   ".drawer_role_selector"
 )!;
-const drawerQRCode = document.querySelector<HTMLDivElement>(".drawer_qrcode")!;
+const drawerQRCode =
+  document.querySelector<HTMLCanvasElement>(".drawer_qrcode")!;
 
 /*=====================*/
 /*===== App State =====*/
@@ -181,19 +185,19 @@ function setWebRTC() {
     state.channel.onclose = () => console.log("closed!!!!!!");
     state.localConnection.createOffer().then((o) => {
       state.localConnection.setLocalDescription(o);
-      new QRCode(
-        drawerQRCode,
-        JSON.stringify(state.localConnection.localDescription)
-      );
+      new QRious({
+        element: drawerQRCode,
+        value: JSON.stringify(state.localConnection.localDescription),
+      });
     });
   } else {
     state.localConnection.onicecandidate = () => {
       console.log(" NEW ice candidnat!! on localconnection reprinting SDP ");
       console.log(JSON.stringify(state.localConnection.localDescription));
-      new QRCode(
-        drawerQRCode,
-        JSON.stringify(state.localConnection.localDescription)
-      );
+      new QRious({
+        element: drawerQRCode,
+        value: JSON.stringify(state.localConnection.localDescription),
+      });
     };
 
     state.localConnection.ondatachannel = (e) => {

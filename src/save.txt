@@ -1,0 +1,233 @@
+import "./style.css";
+
+// const ICEText = document.querySelector<HTMLParagraphElement>("#ICEText")!;
+// const RTCInput = document.querySelector<HTMLInputElement>("#RTCInput")!;
+// const RTCConnexionButton = document.querySelector<HTMLButtonElement>(
+//   "#RTCConnexionButton"
+// )!;
+// const chat = document.querySelector<HTMLUListElement>("#chat")!;
+// const sendMessageInput =
+//   document.querySelector<HTMLInputElement>("#sendMessageInput")!;
+// const sendMessageButton =
+//   document.querySelector<HTMLButtonElement>("#sendMessageButton")!;
+
+// main();
+
+// function main() {
+//   sendMessageButton.onclick = sendMessage;
+// }
+
+// function sendMessage() {
+//   const message = sendMessageInput.value;
+
+//   if (message.trim().length == 0) return;
+
+//   render("You", message);
+// }
+
+// function render(username: string, message: string) {
+//   const elmt = document.createElement("li");
+//   const textToRender = `${username}: ${message}`;
+//   elmt.innerHTML = textToRender;
+//   chat.appendChild(elmt);
+// }
+
+// const qrInput = document.querySelector<HTMLInputElement>("#qrInput")!;
+// const qrcodeDiv = document.querySelector<HTMLDivElement>("#qrcodeDiv")!;
+// const scannerVideo = document.querySelector<HTMLVideoElement>("#scannerVideo")!;
+// // const scannerButton =
+// //   document.querySelector<HTMLButtonElement>("#scannerButton")!;
+// const scannerCanvas =
+//   document.querySelector<HTMLCanvasElement>("#scannerCanvas")!;
+
+// qrInput.onchange = () => sendMessage(qrInput.value);
+
+// async function main() {
+//   scannerCanvas.classList.add("hide");
+//   scannerVideo.classList.add("hide");
+
+//   try {
+//     if (!navigator || !navigator.mediaDevices)
+//       throw new Error("no media device");
+//     const stream = await navigator.mediaDevices.getUserMedia({
+//       audio: false,
+//       video: true,
+//     });
+//     scannerVideo.srcObject = stream;
+//     scannerVideo.onloadedmetadata = () => {
+//       scannerVideo.classList.remove("hide");
+//       scannerVideo.play();
+//       scan();
+//     };
+//   } catch (err) {
+//     console.error(err);
+//   }
+// }
+
+// function generateQR(content: string) {
+//   new QRCode(qrcodeDiv, content);
+// }
+
+// function sendMessage(message: string) {
+//   console.log("message: ", message);
+//   generateQR(message);
+// }
+
+<section class="connexion hide">
+      <input type="text" id="qrInput" />
+      <div id="qrcodeDiv"></div>
+      <video id="scannerVideo"></video>
+      <!-- <button id="scannerButton">Scan</button> -->
+      <canvas id="scannerCanvas"></canvas>
+    </section>
+    <section class="communication">
+      <p id="ICEText"></p>
+      <input type="text" id="RTCInput" />
+      <button id="RTCConnexionButton">Connection</button>
+
+      <ul id="chat"></ul>
+      <input type="text" id="sendMessageInput" />
+      <button id="sendMessageButton">Send</button>
+    </section>
+
+// const app = document.querySelector<HTMLDivElement>("#app")!;
+const webcamButton =
+  document.querySelector<HTMLButtonElement>("#webcamButton")!;
+const webcamVideo = document.querySelector<HTMLVideoElement>("#webcamVideo")!;
+const remoteVideo = document.querySelector<HTMLVideoElement>("#remoteVideo")!;
+const callButton = document.querySelector<HTMLButtonElement>("#callButton")!;
+const callInput = document.querySelector<HTMLInputElement>("#callInput")!;
+
+const servers = {
+  iceServers: [
+    {
+      urls: ["stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"],
+    },
+  ],
+  iceCandidatePoolSize: 10,
+};
+
+let pc = new RTCPeerConnection(servers);
+let localStream: MediaStream | null = null;
+let remoteStream: MediaStream | null = null;
+
+webcamButton.onclick = async () => {
+  localStream = await navigator.mediaDevices.getUserMedia({
+    video: true,
+    audio: true,
+  });
+
+  // Push tracks from local stream to peer connection
+  localStream?.getTracks().forEach((track) => {
+    localStream && pc.addTrack(track, localStream);
+  });
+
+  // Show stream in HTML video
+  webcamVideo.srcObject = localStream;
+};
+
+remoteStream = new MediaStream();
+
+// Pull tracks from remote stream, add to video stream
+pc.ontrack = (event) => {
+  event.streams[0].getTracks().forEach((track) => {
+    remoteStream?.addTrack(track);
+  });
+};
+
+remoteVideo.srcObject = remoteStream;
+
+
+callButton.onclick = async () => {
+  // Reference Firestore collections for signaling
+  const callDoc = firestore.collection('calls').doc();
+  const offerCandidates = callDoc.collection('offerCandidates');
+  const answerCandidates = callDoc.collection('answerCandidates');
+
+  callInput.value = callDoc.id;
+
+  // Get candidates for caller, save to db
+  pc.onicecandidate = event => {
+    event.candidate && offerCandidates.add(event.candidate.toJSON());
+  };
+
+  // Create offer
+  const offerDescription = await pc.createOffer();
+  await pc.setLocalDescription(offerDescription);
+
+  const offer = {
+    sdp: offerDescription.sdp,
+    type: offerDescription.type,
+  };
+
+  await callDoc.set({ offer });
+
+  // Listen for remote answer
+  callDoc.onSnapshot((snapshot) => {
+    const data = snapshot.data();
+    if (!pc.currentRemoteDescription && data?.answer) {
+      const answerDescription = new RTCSessionDescription(data.answer);
+      pc.setRemoteDescription(answerDescription);
+    }
+  });
+
+  // Listen for remote ICE candidates
+  answerCandidates.onSnapshot(snapshot => {
+    snapshot.docChanges().forEach((change) => {
+      if (change.type === 'added') {
+        const candidate = new RTCIceCandidate(change.doc.data());
+        pc.addIceCandidate(candidate);
+      }
+    });
+  });
+}
+
+answerButton.onclick = async () => {
+  const callId = callInput.value;
+  const callDoc = firestore.collection('calls').doc(callId);
+  const offerCandidates = callDoc.collection('offerCandidates');
+  const answerCandidates = callDoc.collection('answerCandidates');
+
+  pc.onicecandidate = event => {
+    event.candidate && answerCandidates.add(event.candidate.toJSON());
+  };
+
+  // Fetch data, then set the offer & answer
+
+  const callData = (await callDoc.get()).data();
+
+  const offerDescription = callData.offer;
+  await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
+
+  const answerDescription = await pc.createAnswer();
+  await pc.setLocalDescription(answerDescription);
+
+  const answer = {
+    type: answerDescription.type,
+    sdp: answerDescription.sdp,
+  };
+
+  await callDoc.update({ answer });
+
+  // Listen to offer candidates
+
+  offerCandidates.onSnapshot((snapshot) => {
+    snapshot.docChanges().forEach((change) => {
+      console.log(change)
+      if (change.type === 'added') {
+        let data = change.doc.data();
+        pc.addIceCandidate(new RTCIceCandidate(data));
+      }
+    });
+  });
+};
+
+
+
+    <div id="app">
+      <video id="webcamVideo" autoplay playsinline></video>
+      <button id="webcamButton">start webcam</button>
+      <video id="remoteVideo" autoplay playsinline></video>
+      <button id="callButton">call</button>
+      <input type="text" id="callInput" />
+    </div>
